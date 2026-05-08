@@ -1,0 +1,145 @@
+version: '3.8'
+
+services:
+  # --- 1. API GATEWAY ---
+  api-gateway:
+    build: ./api-gateway
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - JWT_SECRET=${JWT_SECRET:-khanh_secret_key_2026}
+      - AUTH_URL=http://auth-service:3001
+      - USER_URL=http://user-service:3002
+      - EXAM_URL=http://exam-service:3003
+      - SUBMISSION_URL=http://submission-service:3004
+      - RESULT_URL=http://result-service:3005
+    depends_on:
+      - auth-service
+      - exam-service
+      - submission-service
+      - result-service
+    networks:
+      - exam-network
+
+  # --- 2. AUTH SERVICE & DB ---
+  auth-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+      - ./sql/auth:/docker-entrypoint-initdb.d
+    networks:
+      - exam-network
+
+  auth-service:
+    build: ./services/auth-service
+    environment:
+      - PORT=3001
+      - DATABASE_URL=postgresql://postgres:postgres@auth-db:5432/auth_db
+      - JWT_SECRET=${JWT_SECRET:-khanh_secret_key_2026}
+    depends_on:
+      - auth-db
+    networks:
+      - exam-network
+
+  # --- 3. EXAM SERVICE & DB ---
+  exam-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: exam_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - exam-db-data:/var/lib/postgresql/data
+      - ./sql/exam:/docker-entrypoint-initdb.d
+    networks:
+      - exam-network
+
+  exam-service:
+    build: ./services/exam-service
+    environment:
+      - PORT=3003
+      - DATABASE_URL=postgresql://postgres:postgres@exam-db:5432/exam_db
+      # QUAN TRỌNG: Để Exam Service biết đường gọi sang Submission để kích hoạt chấm lại
+      - SUBMISSION_SERVICE_URL=http://submission-service:3004
+    depends_on:
+      - exam-db
+    networks:
+      - exam-network
+
+  # --- 4. SUBMISSION SERVICE & DB ---
+  submission-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: submission_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - submission-db-data:/var/lib/postgresql/data
+      - ./sql/submission:/docker-entrypoint-initdb.d
+    networks:
+      - exam-network
+
+  submission-service:
+    build: ./services/submission-service
+    environment:
+      - PORT=3004
+      - DATABASE_URL=postgresql://postgres:postgres@submission-db:5432/submission_db
+      - JWT_SECRET=${JWT_SECRET:-khanh_secret_key_2026}
+      # QUAN TRỌNG: Để Submission Service biết đường gọi sang các service khác để lấy đáp án và lưu điểm
+      - EXAM_SERVICE_URL=http://exam-service:3003
+      - RESULT_SERVICE_URL=http://result-service:3005
+    depends_on:
+      - submission-db
+      - result-service
+    networks:
+      - exam-network
+
+  # --- 5. RESULT SERVICE & DB ---
+  result-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: result_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - result-db-data:/var/lib/postgresql/data
+      - ./sql/result:/docker-entrypoint-initdb.d
+    networks:
+      - exam-network
+
+  result-service:
+    build: ./services/result-service
+    environment:
+      - PORT=3005
+      - DATABASE_URL=postgresql://postgres:postgres@result-db:5432/result_db
+    depends_on:
+      - result-db
+    networks:
+      - exam-network
+
+  # --- 6. FRONTEND ---
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE=http://localhost:4000
+    depends_on:
+      - api-gateway
+    networks:
+      - exam-network
+
+networks:
+  exam-network:
+    driver: bridge
+
+volumes:
+  auth-db-data:
+  exam-db-data:
+  submission-db-data:
+  result-db-data:
