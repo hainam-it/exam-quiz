@@ -138,6 +138,7 @@ function Register({ onSwitch }) {
   const [u, setU] = useState("");
   const [p, setP] = useState("");
   const [confirmP, setConfirmP] = useState("");
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -150,7 +151,7 @@ function Register({ onSwitch }) {
       return;
     }
     try {
-      await axios.post(`${API}/auth/register`, { username: u, password: p, email: email });
+      await axios.post(`${API}/auth/register`, { username: u, password: p, email: email, full_name: fullName });
       alert("Đăng ký thành công!"); onSwitch();
     } catch (err) { setError("Lỗi đăng ký!"); }
   }
@@ -159,6 +160,7 @@ function Register({ onSwitch }) {
       <form className="login-card" onSubmit={handleSubmit}>
         <h2>Tạo tài khoản mới</h2>
         <input className="login-input" placeholder="Username" value={u} onChange={e => setU(e.target.value)} required />
+        <input className="login-input" type="full_name" placeholder="Họ và tên" value={fullName} onChange={e => setFullName(e.target.value)} required />
         <input className="login-input" type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required />
         <div style={{ position: 'relative', marginBottom: 10 }}>
           <input

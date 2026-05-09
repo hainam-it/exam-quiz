@@ -4,7 +4,7 @@ import cors from "cors";
 
 const app = express();
 
-// 1. Cấu hình CORS
+// 1. Cấu hình CORS và JSON
 app.use(cors());
 app.use(express.json());
 
@@ -14,25 +14,26 @@ const pool = new Pool({
     connectionTimeoutMillis: 5000 
 });
 
-const SERVICE_TOKEN = process.env.SERVICE_TOKEN || "service_token";
-
-// 3. Middleware bảo vệ Service (Chỉ Gateway mới được gọi)
-const checkServiceToken = (req: any, res: any, next: any) => {
-    const sToken = req.headers["x-service-token"];
-    if (sToken !== SERVICE_TOKEN) {
-        return res.status(403).json({ error: "Direct access forbidden" });
-    }
-    next();
-};
-
-// 4. Log request để Khánh dễ debug qua Docker Terminal
+// 3. Log request để dễ debug
 app.use((req, res, next) => {
     console.log(`>>> [USER-SERVICE] ${req.method} ${req.url}`);
     next();
 });
 
-// --- ENDPOINT: Lấy thông tin Profile ---
-app.get("/users/:id/profile", checkServiceToken, async (req, res) => {
+// --- ENDPOINT 1: Lấy danh sách toàn bộ Profiles (Để hiện tên trên bảng điểm) ---
+app.get("/users", async (req, res) => {
+    try {
+        // Chỉ lấy những cột cần thiết, bỏ class để tránh lỗi 500
+        const r = await pool.query('SELECT user_id, username, full_name, role FROM profiles');
+        res.json(r.rows);
+    } catch (err: any) {
+        console.error("Lỗi lấy danh sách user:", err.message);
+        res.status(500).json({ error: "Lỗi Server khi truy vấn danh sách user" });
+    }
+});
+
+// --- ENDPOINT 2: Lấy thông tin Profile chi tiết theo ID ---
+app.get("/users/:id/profile", async (req, res) => {
     try {
         const { id } = req.params;
         const r = await pool.query("SELECT * FROM profiles WHERE user_id=$1", [id]);
@@ -46,38 +47,43 @@ app.get("/users/:id/profile", checkServiceToken, async (req, res) => {
     }
 });
 
-// --- ENDPOINT: Cập nhật hoặc Tạo mới Profile (Upsert) ---
-app.post("/users/:id/profile", checkServiceToken, async (req, res) => {
+// --- ENDPOINT 3: Lưu hoặc cập nhật Profile (Dùng cho cả Auth-Service và Frontend) ---
+app.post("/profiles", async (req, res) => {
+    const { user_id, username, full_name, role } = req.body;
     try {
-        const { id } = req.params;
-        const { full_name, avatar_url, role, class: cls } = req.body;
-
-        // Lưu ý: "class" được bọc trong dấu ngoặc kép để tránh lỗi từ khóa SQL
+        // Thực hiện Upsert: Nếu trùng user_id thì cập nhật full_name mới
         const query = `
-            INSERT INTO profiles(user_id, full_name, avatar_url, role, "class") 
-            VALUES($1, $2, $3, $4, $5)
+            INSERT INTO profiles (user_id, username, full_name, role) 
+            VALUES ($1, $2, $3, $4) 
             ON CONFLICT (user_id) 
             DO UPDATE SET 
-                full_name = EXCLUDED.full_name, 
-                avatar_url = EXCLUDED.avatar_url, 
-                role = EXCLUDED.role, 
-                "class" = EXCLUDED."class"
+                full_name = EXCLUDED.full_name,
+                username = EXCLUDED.username,
+                role = EXCLUDED.role
             RETURNING *
         `;
-        
-        const upsert = await pool.query(query, [id, full_name || null, avatar_url || null, role || null, cls || null]);
-        res.json(upsert.rows[0]);
+        const r = await pool.query(query, [user_id, username, full_name, role]);
+        console.log(`✅ Đã lưu profile thành công cho: ${full_name}`);
+        res.status(201).json(r.rows[0]);
     } catch (err: any) {
-        console.error("Lỗi Upsert Profile:", err.message);
-        res.status(500).json({ error: "Không thể cập nhật hồ sơ" });
+        console.error("Lỗi lưu profile:", err.message);
+        res.status(500).json({ error: "Không thể lưu hồ sơ vào Database" });
     }
 });
 
-// --- ENDPOINT: Danh sách Profiles (Dành cho Admin) ---
-app.get("/users", checkServiceToken, async (req, res) => {
+// Giữ lại route cũ để tương thích với các phần khác của hệ thống
+app.post("/users/:id/profile", async (req, res) => {
+    const { id } = req.params;
+    const { full_name, role } = req.body;
     try {
-        const r = await pool.query('SELECT * FROM profiles ORDER BY "class" ASC');
-        res.json(r.rows);
+        const query = `
+            INSERT INTO profiles(user_id, full_name, role) 
+            VALUES($1, $2, $3)
+            ON CONFLICT (user_id) DO UPDATE SET full_name = EXCLUDED.full_name, role = EXCLUDED.role
+            RETURNING *
+        `;
+        const r = await pool.query(query, [id, full_name, role]);
+        res.json(r.rows[0]);
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }

@@ -9,41 +9,41 @@ export function ExamStats({ token, examId, onClose }) {
   const [loading, setLoading] = useState(false);
   const [usersInfo, setUsersInfo] = useState({});
 
-  const loadStats = async () => {
-    try {
-      const resStats = await axios.get(`${API}/results/exam/${examId}`, { headers: { Authorization: "Bearer " + token } });
-      setSt(resStats.data);
+const loadStats = async () => {
+  try {
+    const resStats = await axios.get(`${API}/results/exam/${examId}`, { headers: { Authorization: "Bearer " + token } });
+    setSt(resStats.data);
 
-      try {
-        const [authUsersRes, profilesRes] = await Promise.all([
-          axios.get(`${API}/auth/users`, { headers: { Authorization: "Bearer " + token } }),
-          axios.get(`${API}/users`, { headers: { Authorization: "Bearer " + token } })
-        ]);
-        
-        const infoMap = {};
-        if (authUsersRes.data && Array.isArray(authUsersRes.data)) {
-          authUsersRes.data.forEach(u => {
-            infoMap[u.id] = { username: u.username };
-          });
-        }
-        if (profilesRes.data && Array.isArray(profilesRes.data)) {
-          profilesRes.data.forEach(p => {
-            if (infoMap[p.user_id]) {
-              infoMap[p.user_id].fullName = p.full_name;
-              infoMap[p.user_id].class = p.class;
-            } else {
-              infoMap[p.user_id] = { fullName: p.full_name, class: p.class };
-            }
-          });
-        }
-        setUsersInfo(infoMap);
-      } catch (userErr) {
-        console.error("Lỗi khi tải thông tin user:", userErr);
-      }
-    } catch (e) {
-      console.error(e);
+    try {
+      // Thay vì gọi 2 API, chỉ tập trung vào auth/users nếu bạn lưu full_name ở đó
+// Gọi API lấy danh sách toàn bộ hồ sơ thí sinh
+const userRes = await axios.get(`${API}/user/users`, { 
+  headers: { Authorization: "Bearer " + token } 
+});
+
+const infoMap = {};
+// Bắt chuẩn cấu trúc dữ liệu trả về
+const usersList = userRes.data.data || userRes.data;
+
+if (Array.isArray(usersList)) {
+  usersList.forEach(u => {
+    // Khớp bằng user_id
+    const keyId = u.user_id || u.id; 
+    infoMap[keyId] = { 
+      username: u.username || "",
+      full_name: u.full_name || u.fullName || "",
+      class: u.class || ""
+    };
+  });
+}
+setUsersInfo(infoMap);
+    } catch (userErr) {
+      console.error("Lỗi khi tải thông tin user:", userErr);
     }
-  };
+  } catch (e) {
+    console.error(e);
+  }
+};
 
   useEffect(() => { loadStats(); }, [examId, token]);
 
@@ -70,12 +70,10 @@ export function ExamStats({ token, examId, onClose }) {
 
     const dataToExport = st.details.map((d, index) => {
       const uInfo = usersInfo[d.user_id] || {};
-      const name = uInfo.fullName || uInfo.username || `Thí sinh ${d.user_id.slice(0, 5)}`;
+      const name = uInfo.full_name || uInfo.username || `Thí sinh ${d.user_id.slice(0, 5)}`;
       return {
         "STT": index + 1,
         "Họ và Tên": name,
-        "Tên Đăng Nhập": uInfo.username || "",
-        "Lớp": uInfo.class || "",
         "Số Câu Đúng": d.correct_count,
         "Tổng Số Câu": d.total_questions,
         "Điểm Số": d.score,
@@ -86,7 +84,7 @@ export function ExamStats({ token, examId, onClose }) {
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "ThongKeDiem");
-    XLSX.writeFile(workbook, `Thong_Ke_Diem_De_${examId.slice(0,5)}.xlsx`);
+    XLSX.writeFile(workbook, `Thong_Ke_Diem_De_${examId.slice(0, 5)}.xlsx`);
   };
 
   if (!st) return <div style={{ padding: '20px', textAlign: 'center' }}>Đang tải...</div>;
@@ -95,24 +93,24 @@ export function ExamStats({ token, examId, onClose }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h2 style={{ margin: 0, fontSize: '20px', color: '#1e293b' }}>📊 Thống kê kết quả đề thi</h2>
         <div style={{ display: 'flex', gap: '10px' }}>
-          <button 
-            className="btn-primary" 
-            style={{ background: '#10b981', padding: '6px 12px', border: 'none', fontSize: '14px' }} 
-            onClick={handleExportExcel} 
+          <button
+            className="btn-primary"
+            style={{ background: '#10b981', padding: '6px 12px', border: 'none', fontSize: '14px' }}
+            onClick={handleExportExcel}
           >
             📥 Xuất Excel
           </button>
-          <button 
-            className="btn-primary" 
-            style={{ background: '#f59e0b', padding: '6px 12px', border: 'none', fontSize: '14px' }} 
-            onClick={handleRegrade} 
+          <button
+            className="btn-primary"
+            style={{ background: '#f59e0b', padding: '6px 12px', border: 'none', fontSize: '14px' }}
+            onClick={handleRegrade}
             disabled={loading}
           >
             {loading ? "⌛ Đang chấm..." : "🔄 Chấm lại"}
           </button>
-          <button 
-            className="btn-outline" 
-            style={{ padding: '6px 12px', fontSize: '14px' }} 
+          <button
+            className="btn-outline"
+            style={{ padding: '6px 12px', fontSize: '14px' }}
             onClick={onClose}
           >
             ⬅ Quay lại
@@ -146,10 +144,13 @@ export function ExamStats({ token, examId, onClose }) {
             {st.details && st.details.length > 0 ? (
               st.details.map(d => {
                 const uInfo = usersInfo[d.user_id] || {};
-                const displayName = uInfo.fullName || uInfo.username || `Thí sinh ${d.user_id.slice(0, 5)}`;
+
+                // Sửa lại logic displayName để nhận cả full_name (từ SQL) hoặc fullName (từ code cũ)
+                const displayName = uInfo.full_name || uInfo.fullName || uInfo.username || `Thí sinh ${d.user_id.slice(0, 5)}`;
+
                 return (
                   <tr key={d.id} style={{ borderTop: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '12px', fontWeight: '500' }}>
+                    <td style={{ padding: '12px', fontWeight: '500', color: '#1e293b' }}>
                       {displayName}
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>
@@ -158,7 +159,7 @@ export function ExamStats({ token, examId, onClose }) {
                     <td style={{ padding: '12px', textAlign: 'center' }}>
                       <b style={{ fontSize: '16px', color: '#4f46e5' }}>{d.score}đ</b>
                     </td>
-                    <td style={{ padding: '12px', textAlign: 'right', color: '#94a3b8', fontSize: '13px' }}>
+                    <td style={{ padding: '12px', textAlign: 'right', color: '#64748b', fontSize: '13px' }}>
                       {new Date(d.created_at).toLocaleString('vi-VN')}
                     </td>
                   </tr>
@@ -166,8 +167,8 @@ export function ExamStats({ token, examId, onClose }) {
               })
             ) : (
               <tr>
-                <td colSpan="4" style={{ padding: '30px', textAlign: 'center', color: '#94a3b8' }}>
-                  Chưa có thí sinh nào nộp bài.
+                <td colSpan="4" style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+                  📭 Chưa có thí sinh nào nộp bài.
                 </td>
               </tr>
             )}
@@ -218,15 +219,15 @@ export function ExamQuestionEditor({ token, examId, onClose }) {
           📝 Chỉnh sửa đề: <span style={{ color: '#4f46e5' }}>{data?.exam?.title}</span>
         </h3>
         <div style={{ display: 'flex', gap: '10px' }}>
-          <button 
-            className="btn-primary" 
+          <button
+            className="btn-primary"
             onClick={() => alert("✅ Các thay đổi đã được lưu thành công!")}
             style={{ padding: '6px 12px', fontSize: '14px', border: 'none', background: '#10b981', color: 'white', borderRadius: '4px', cursor: 'pointer' }}
           >
             💾 Lưu
           </button>
-          <button 
-            className="btn-outline" 
+          <button
+            className="btn-outline"
             onClick={onClose}
             style={{ padding: '6px 12px', fontSize: '14px' }}
           >
@@ -238,12 +239,12 @@ export function ExamQuestionEditor({ token, examId, onClose }) {
       <div style={{ maxHeight: '70vh', overflowY: 'auto', paddingRight: '5px' }}>
         {data?.questions && data.questions.length > 0 ? (
           data.questions.map((q, i) => (
-            <div 
-              key={q.id} 
-              style={{ 
-                borderLeft: '4px solid #4f46e5', 
-                background: '#fff', 
-                padding: '15px', 
+            <div
+              key={q.id}
+              style={{
+                borderLeft: '4px solid #4f46e5',
+                background: '#fff',
+                padding: '15px',
                 marginBottom: '15px',
                 boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
                 borderRadius: '0 8px 8px 0'
@@ -262,20 +263,20 @@ export function ExamQuestionEditor({ token, examId, onClose }) {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {q.options.map(opt => (
-                  <div 
-                    key={opt.id} 
-                    style={{ 
+                  <div
+                    key={opt.id}
+                    style={{
                       display: 'flex', alignItems: 'center', gap: '10px',
                       background: opt.is_correct ? '#f0fdf4' : '#f8fafc',
                       padding: '6px 10px', borderRadius: '4px',
                       border: opt.is_correct ? '1px solid #bbf7d0' : '1px solid #f1f5f9'
                     }}
                   >
-                    <input 
-                      type="radio" 
-                      name={`q-${q.id}`} 
-                      checked={opt.is_correct} 
-                      onChange={() => updateCorrectAnswer(q.id, opt.code)} 
+                    <input
+                      type="radio"
+                      name={`q-${q.id}`}
+                      checked={opt.is_correct}
+                      onChange={() => updateCorrectAnswer(q.id, opt.code)}
                       disabled={loading}
                       style={{ cursor: 'pointer', width: '16px', height: '16px', margin: 0 }}
                     />
@@ -311,10 +312,14 @@ export function ExamQuestionEditor({ token, examId, onClose }) {
 export function ExamManager({ token, me, onEditQuestions, onViewStats }) {
   const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Trạng thái quản lý view nội bộ: 'list', 'stats', 'edit'
   const [activeView, setActiveView] = useState('list');
   const [selectedExamId, setSelectedExamId] = useState(null);
+
+  // State cho chỉnh sửa thời gian
+  const [editingDurationId, setEditingDurationId] = useState(null);
+  const [editingDurationValue, setEditingDurationValue] = useState("");
 
   const loadExams = async () => {
     try {
@@ -345,23 +350,42 @@ export function ExamManager({ token, me, onEditQuestions, onViewStats }) {
     }
   };
 
+  const updateExamDuration = async (id, newDuration) => {
+    const numDuration = parseInt(newDuration);
+    if (!newDuration || isNaN(numDuration) || numDuration <= 0 || numDuration > 480) {
+      alert("Vui lòng nhập thời gian hợp lệ (1-480 phút)!");
+      return;
+    }
+    try {
+      await axios.put(`${API}/exams/${id}`, { duration: numDuration }, {
+        headers: { Authorization: "Bearer " + token }
+      });
+      alert("✅ Cập nhật thời gian thành công!");
+      loadExams();
+      setEditingDurationId(null);
+      setEditingDurationValue("");
+    } catch (e) {
+      alert("❌ Lỗi khi cập nhật thời gian!");
+    }
+  };
+
   if (loading) return <div style={{ textAlign: 'center', padding: '20px' }}>Đang tải danh sách đề thi...</div>;
 
   return (
     <div className="card" style={{ padding: '20px', background: '#fff', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
       {activeView === 'stats' && (
-        <ExamStats 
-          token={token} 
-          examId={selectedExamId} 
-          onClose={() => { setActiveView('list'); setSelectedExamId(null); }} 
+        <ExamStats
+          token={token}
+          examId={selectedExamId}
+          onClose={() => { setActiveView('list'); setSelectedExamId(null); }}
         />
       )}
 
       {activeView === 'edit' && (
-        <ExamQuestionEditor 
-          token={token} 
-          examId={selectedExamId} 
-          onClose={() => { setActiveView('list'); setSelectedExamId(null); }} 
+        <ExamQuestionEditor
+          token={token}
+          examId={selectedExamId}
+          onClose={() => { setActiveView('list'); setSelectedExamId(null); }}
         />
       )}
 
@@ -392,7 +416,72 @@ export function ExamManager({ token, me, onEditQuestions, onViewStats }) {
                   <tr key={ex.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
                     <td style={{ padding: '12px', fontWeight: '500' }}>{ex.title}</td>
                     <td style={{ padding: '12px' }}><span className="stat-card" style={{ padding: '2px 8px', fontSize: '12px' }}>{ex.subject}</span></td>
-                    <td style={{ padding: '12px' }}>{ex.duration} phút</td>
+                    <td style={{ padding: '12px' }}>
+                      {editingDurationId === ex.id ? (
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <input
+                            type="text"
+                            value={editingDurationValue}
+                            onChange={(e) => setEditingDurationValue(e.target.value)}
+                            style={{
+                              width: '60px',
+                              padding: '4px',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '4px',
+                              textAlign: 'center',
+                              fontSize: '14px'
+                            }}
+                            autoFocus
+                          />
+                          <span style={{ fontSize: '12px', color: '#64748b' }}>phút</span>
+                          <button
+                            onClick={() => updateExamDuration(ex.id, editingDurationValue)}
+                            style={{
+                              padding: '2px 8px',
+                              background: '#10b981',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '12px'
+                            }}
+                          >
+                            ✓
+                          </button>
+                          <button
+                            onClick={() => { setEditingDurationId(null); setEditingDurationValue(""); }}
+                            style={{
+                              padding: '2px 8px',
+                              background: '#ef4444',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '12px'
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ) : (
+                        <span
+                          onClick={() => {
+                            setEditingDurationId(ex.id);
+                            setEditingDurationValue(ex.duration);
+                          }}
+                          style={{
+                            cursor: 'pointer',
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            transition: 'background 0.2s',
+                          }}
+                          onMouseEnter={(e) => e.target.style.background = '#f0f9ff'}
+                          onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                        >
+                          {ex.duration} phút ✏️
+                        </span>
+                      )}
+                    </td>
                     <td style={{ padding: '12px', color: '#6b7280', fontSize: '13px' }}>
                       {new Date(ex.created_at).toLocaleDateString('vi-VN')}
                     </td>
@@ -471,10 +560,14 @@ export function TeacherPanel({ token, me, refresh }) {
     if (!title.trim() || !subject || selectedQs.length === 0) {
       return alert("Vui lòng nhập đủ tên, môn và chọn câu hỏi!");
     }
+    const numDuration = parseInt(duration);
+    if (!duration || isNaN(numDuration) || numDuration <= 0 || numDuration > 120) {
+      return alert("Thời gian làm bài phải từ 1 đến 120 phút!");
+    }
     setIsSubmitting(true);
     try {
       const resExam = await axios.post(`${API}/exams`,
-        { title, subject, created_by: me?.id, duration },
+        { title, subject, created_by: me?.id, duration: numDuration },
         { headers: { Authorization: "Bearer " + token } }
       );
       const newExamId = resExam.data.id;
@@ -524,6 +617,16 @@ export function TeacherPanel({ token, me, refresh }) {
           <option value="">-- Chọn môn --</option>
           {subjects.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
+
+        {/* Thời gian làm bài (phút) */}
+        <input
+          type="text"
+          className="login-input"
+          style={{ flex: 1, margin: 0 }}
+          placeholder="Thời gian (phút)"
+          value={duration}
+          onChange={e => setDuration(e.target.value)}
+        />
 
         {/* Nút Tạo đề thi: Bỏ width 100% và marginTop để nó nằm gọn trên một hàng */}
         <button
@@ -609,12 +712,12 @@ export function TeacherPanel({ token, me, refresh }) {
 
           <div style={{ maxHeight: '350px', overflowY: 'auto', border: '1px solid #e2e8f0', background: '#fff', borderRadius: '8px', padding: '8px' }}>
             {bankQuestions.map((q) => (
-              <div 
-                key={q.id} 
-                style={{ 
-                  padding: '12px', 
-                  borderBottom: '1px solid #f8fafc', 
-                  display: 'flex', 
+              <div
+                key={q.id}
+                style={{
+                  padding: '12px',
+                  borderBottom: '1px solid #f8fafc',
+                  display: 'flex',
                   gap: '12px',
                   alignItems: 'center',
                   cursor: 'pointer',
@@ -629,11 +732,11 @@ export function TeacherPanel({ token, me, refresh }) {
                 <input
                   type="checkbox"
                   checked={selectedQs.includes(q.id)}
-                  onChange={() => {}} // dummy handler, logic is in the div's onClick
+                  onChange={() => { }} // dummy handler, logic is in the div's onClick
                   style={{ cursor: 'pointer', width: '18px', height: '18px', accentColor: '#10b981', margin: 0, pointerEvents: 'none' }}
                 />
-                <span style={{ 
-                  color: selectedQs.includes(q.id) ? '#065f46' : '#334155', 
+                <span style={{
+                  color: selectedQs.includes(q.id) ? '#065f46' : '#334155',
                   fontWeight: selectedQs.includes(q.id) ? '600' : 'normal',
                   fontSize: '15px',
                   flex: 1,
@@ -671,28 +774,28 @@ export function QuestionBankManager({ token }) {
     } catch (e) { console.log(e); }
   };
 
-// Trong QuestionBankManager
-const loadQuestions = async (sub) => {
-  if (!sub) return;
-  try {
-    const res = await axios.get(`${API}/exams/banks/subject/${sub}`, { 
-      headers: { Authorization: "Bearer " + token } 
-    });
-    // Đảm bảo setQuestions khớp với biến bạn dùng ở phần map
-    setQuestions(res.data); 
-  } catch (e) {
-    console.error("Lỗi tải câu hỏi:", e);
-  }
-};
+  // Trong QuestionBankManager
+  const loadQuestions = async (sub) => {
+    if (!sub) return;
+    try {
+      const res = await axios.get(`${API}/exams/banks/subject/${sub}`, {
+        headers: { Authorization: "Bearer " + token }
+      });
+      // Đảm bảo setQuestions khớp với biến bạn dùng ở phần map
+      setQuestions(res.data);
+    } catch (e) {
+      console.error("Lỗi tải câu hỏi:", e);
+    }
+  };
 
-// Quan trọng nhất: Tự động tải lại danh sách khi chọn môn
-useEffect(() => {
-  if (selectedSubject) {
-    loadQuestions(selectedSubject);
-  } else {
-    setQuestions([]); // Nếu không chọn môn thì xóa trắng danh sách
-  }
-}, [selectedSubject]);
+  // Quan trọng nhất: Tự động tải lại danh sách khi chọn môn
+  useEffect(() => {
+    if (selectedSubject) {
+      loadQuestions(selectedSubject);
+    } else {
+      setQuestions([]); // Nếu không chọn môn thì xóa trắng danh sách
+    }
+  }, [selectedSubject]);
   useEffect(() => { loadSubjects(); }, []);
   useEffect(() => { loadQuestions(selectedSubject); }, [selectedSubject]);
 
@@ -725,23 +828,23 @@ useEffect(() => {
     } catch (e) { alert("Lỗi khi thêm vào ngân hàng!"); }
   };
 
-const updateQuestion = async () => {
-  try {
-    const finalSub = newSub || selectedSubject;
-    await axios.put(`${API}/exams/banks/${editingId}`, {
-      subject: finalSub,
-      text: qText,
-      options: optTexts.map((t, i) => ({ text: t, code: String.fromCharCode(65 + i), is_correct: i === correctIdx }))
-    }, { headers: { Authorization: "Bearer " + token } });
+  const updateQuestion = async () => {
+    try {
+      const finalSub = newSub || selectedSubject;
+      await axios.put(`${API}/exams/banks/${editingId}`, {
+        subject: finalSub,
+        text: qText,
+        options: optTexts.map((t, i) => ({ text: t, code: String.fromCharCode(65 + i), is_correct: i === correctIdx }))
+      }, { headers: { Authorization: "Bearer " + token } });
 
-    alert("Cập nhật thành công!");
-    setEditingId(null);
-    setQText("");
-    setOptTexts(["", "", "", ""]);
-    setCorrectIdx(0);
-    loadQuestions(finalSub);
-  } catch (e) { alert("Lỗi khi cập nhật!"); }
-};
+      alert("Cập nhật thành công!");
+      setEditingId(null);
+      setQText("");
+      setOptTexts(["", "", "", ""]);
+      setCorrectIdx(0);
+      loadQuestions(finalSub);
+    } catch (e) { alert("Lỗi khi cập nhật!"); }
+  };
 
   // Hàm này dùng để gắn vào nút ✏️ bên danh sách câu hỏi
   const startEdit = (q) => {
@@ -768,25 +871,25 @@ const updateQuestion = async () => {
       const arrayBuffer = await file.arrayBuffer();
       const result = await mammoth.extractRawText({ arrayBuffer });
       let text = result.value;
-      
+
       // Xử lý line breaks: \r\n -> \n
       text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-      
+
       const lines = text.split('\n')
         .map(line => line.trim())
         .filter(line => line.length > 0);
-      
+
       const questions = [];
       let currentQ = null;
-      
+
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        
+
         // Nhận dạng câu hỏi (bắt đầu bằng Câu hoặc chỉ là nội dung)
-        if (line.match(/^(Câu\s*\d+:|Question\s*\d+:|^\d+\.)/i) || 
-            (currentQ === null && !line.match(/^[A-D][\.\)]/))) {
+        if (line.match(/^(Câu\s*\d+:|Question\s*\d+:|^\d+\.)/i) ||
+          (currentQ === null && !line.match(/^[A-D][\.\)]/))) {
           if (currentQ !== null) questions.push(currentQ);
-          
+
           // Loại bỏ tiền tố "Câu X:" hoặc "Question X:"
           const qText = line.replace(/^(Câu\s*\d+:|Question\s*\d+:|^\d+\.)\s*/i, '');
           currentQ = { text: qText, options: [] };
@@ -795,11 +898,11 @@ const updateQuestion = async () => {
         else if (currentQ && line.match(/^[A-D][\.\)]/)) {
           const code = line[0];
           let optionText = line.substring(2).trim();
-          
+
           // Kiểm tra đáp án đúng (có * hoặc "(Đúng)" hoặc "(Correct)")
-          const isCorrect = /[\*]\s*$/.test(optionText) || 
-                          /\(Đúng\)|\(Correct\)|\(đúng\)/.test(optionText);
-          
+          const isCorrect = /[\*]\s*$/.test(optionText) ||
+            /\(Đúng\)|\(Correct\)|\(đúng\)/.test(optionText);
+
           // Loại bỏ dấu *, (Đúng), (Correct), v.v
           optionText = optionText
             .replace(/\*\s*$/, '')                    // Bỏ * ở cuối
@@ -807,32 +910,32 @@ const updateQuestion = async () => {
             .replace(/\s*\(Correct\)/, '')            // Bỏ (Correct)
             .replace(/\s*\(đúng\)/, '')               // Bỏ (đúng)
             .trim();
-          
+
           if (optionText.length > 0) {
             currentQ.options.push({ code, text: optionText, is_correct: isCorrect });
           }
         }
       }
-      
+
       if (currentQ !== null && currentQ.options.length > 0) {
         questions.push(currentQ);
       }
-      
+
       // Kiểm tra tính hợp lệ
       const validQuestions = questions.filter(q => q.options.length >= 2);
-      
+
       if (validQuestions.length === 0) {
         alert("❌ Không tìm thấy câu hỏi nào hợp lệ trong file!\n\nFormat mong đợi:\nCâu 1: Nội dung câu hỏi?\nA. Đáp án A\nB. Đáp án B\nC. Đáp án C\nD*. Đáp án D (đáp án đúng)");
         return null;
       }
-      
+
       // Mỗi câu phải có ít nhất 1 đáp án đúng
       for (let q of validQuestions) {
         if (!q.options.some(opt => opt.is_correct)) {
           q.options[0].is_correct = true; // Mặc định đáp án A nếu không có dấu
         }
       }
-      
+
       console.log("✅ Parse thành công:", validQuestions); // Log để debug
       return validQuestions;
     } catch (e) {
@@ -882,81 +985,81 @@ const updateQuestion = async () => {
     }
   };
 
-return (
+  return (
     <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
       {/* CỘT TRÁI: THÊM / SỬA CÂU HỎI */}
       <div className="card" style={{ flex: 1, padding: '20px', background: '#fff', borderRadius: '12px' }}>
         <h3 style={{ marginTop: 0 }}>
           {editingId ? "📝 Chỉnh sửa câu hỏi" : "Thêm câu hỏi mới"}
         </h3>
-        
+
         <div style={{ marginBottom: '15px' }}>
           <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Môn học:</label>
           <div style={{ display: 'flex', gap: '10px' }}>
-            <select 
-              className="login-input" 
-              style={{ flex: 1, margin: 0 }} 
-              value={selectedSubject} 
+            <select
+              className="login-input"
+              style={{ flex: 1, margin: 0 }}
+              value={selectedSubject}
               onChange={e => setSelectedSubject(e.target.value)}
             >
               <option value="">-- Chọn môn --</option>
               {subjects.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
-            <input 
-              className="login-input" 
-              style={{ flex: 1, margin: 0 }} 
-              placeholder="Hoặc tạo môn mới..." 
-              value={newSub} 
-              onChange={e => setNewSub(e.target.value)} 
+            <input
+              className="login-input"
+              style={{ flex: 1, margin: 0 }}
+              placeholder="Hoặc tạo môn mới..."
+              value={newSub}
+              onChange={e => setNewSub(e.target.value)}
             />
           </div>
         </div>
 
-        <textarea 
-          className="login-input" 
-          placeholder="Nội dung câu hỏi" 
-          value={qText} 
-          onChange={e => setQText(e.target.value)} 
-          style={{ width: '100%', height: '80px', padding: '10px' }} 
+        <textarea
+          className="login-input"
+          placeholder="Nội dung câu hỏi"
+          value={qText}
+          onChange={e => setQText(e.target.value)}
+          style={{ width: '100%', height: '80px', padding: '10px' }}
         />
-        
+
         <div style={{ marginTop: '10px' }}>
           {optTexts.map((txt, i) => (
             <div key={i} style={{ display: 'flex', gap: '10px', marginTop: '8px', alignItems: 'center' }}>
-              <input 
-                type="radio" 
-                name="bank_correct" 
-                checked={correctIdx === i} 
-                onChange={() => setCorrectIdx(i)} 
+              <input
+                type="radio"
+                name="bank_correct"
+                checked={correctIdx === i}
+                onChange={() => setCorrectIdx(i)}
               />
-              <input 
-                className="login-input" 
-                placeholder={`Đáp án ${String.fromCharCode(65 + i)}`} 
-                value={txt} 
-                onChange={e => { 
-                  const n = [...optTexts]; 
-                  n[i] = e.target.value; 
-                  setOptTexts(n); 
-                }} 
-                style={{ margin: 0, flex: 1 }} 
+              <input
+                className="login-input"
+                placeholder={`Đáp án ${String.fromCharCode(65 + i)}`}
+                value={txt}
+                onChange={e => {
+                  const n = [...optTexts];
+                  n[i] = e.target.value;
+                  setOptTexts(n);
+                }}
+                style={{ margin: 0, flex: 1 }}
               />
             </div>
           ))}
         </div>
 
         <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
-          <button 
-            className="btn-primary" 
-            style={{ flex: 2 }} 
+          <button
+            className="btn-primary"
+            style={{ flex: 2 }}
             onClick={editingId ? updateQuestion : addQuestion}
           >
             {editingId ? "🆙 Cập nhật câu hỏi" : "Lưu vào Ngân hàng"}
           </button>
 
           {editingId && (
-            <button 
-              className="btn-outline" 
-              style={{ flex: 1, background: '#64748b', color: '#fff', border: 'none' }} 
+            <button
+              className="btn-outline"
+              style={{ flex: 1, background: '#64748b', color: '#fff', border: 'none' }}
               onClick={() => {
                 setEditingId(null);
                 setQText("");
@@ -972,23 +1075,23 @@ return (
         {/* ===== PHẦN IMPORT FILE WORD ===== */}
         <div style={{ marginTop: '25px', paddingTop: '20px', borderTop: '2px solid #f1f5f9' }}>
           <h4 style={{ margin: '0 0 15px 0', color: '#1e293b' }}>📄 Hoặc import từ file Word</h4>
-          
-          <div style={{ 
-            padding: '20px', 
-            background: '#f0f9ff', 
-            borderRadius: '10px', 
+
+          <div style={{
+            padding: '20px',
+            background: '#f0f9ff',
+            borderRadius: '10px',
             border: '2px dashed #3b82f6',
             textAlign: 'center'
           }}>
             <p style={{ margin: '0 0 10px 0', color: '#1e40af', fontSize: '14px' }}>
               📋 Chọn file Word (.docx) chứa danh sách câu hỏi
             </p>
-            
-            <input 
-              type="file" 
+
+            <input
+              type="file"
               accept=".docx,.doc"
               onChange={handleImportFromWord}
-              style={{ 
+              style={{
                 display: 'block',
                 width: '100%',
                 padding: '10px',
@@ -1003,7 +1106,7 @@ return (
             <div style={{ marginTop: '12px', fontSize: '12px', color: '#1e40af', textAlign: 'left', background: '#e0f2fe', padding: '10px', borderRadius: '6px' }}>
               <strong>📌 Format file Word:</strong>
               <pre style={{ margin: '8px 0 0 0', whiteSpace: 'pre-wrap', wordWrap: 'break-word', fontSize: '11px' }}>
-{`Câu 1: Nội dung câu hỏi?
+                {`Câu 1: Nội dung câu hỏi?
 A. Đáp án A
 B. Đáp án B
 C. Đáp án C
@@ -1015,22 +1118,22 @@ B. Tùy chọn 2
 C*. Tùy chọn 3 (Đúng)
 D. Tùy chọn 4`}
               </pre>
-              <p style={{ margin: '8px 0 0 0' }}>✅ Đánh dấu đáp án đúng bằng <code style={{background: '#fff', padding: '2px 6px'}}>*</code> hoặc <code style={{background: '#fff', padding: '2px 6px'}}>(Đúng)</code></p>
+              <p style={{ margin: '8px 0 0 0' }}>✅ Đánh dấu đáp án đúng bằng <code style={{ background: '#fff', padding: '2px 6px' }}>*</code> hoặc <code style={{ background: '#fff', padding: '2px 6px' }}>(Đúng)</code></p>
             </div>
           </div>
         </div>
       </div>
 
-{/* CỘT PHẢI: DANH SÁCH CÂU HỎI */}
-      <div 
-        className="card" 
-        style={{ 
-          flex: 1.2, 
-          padding: '24px', 
-          background: '#ffffff', 
+      {/* CỘT PHẢI: DANH SÁCH CÂU HỎI */}
+      <div
+        className="card"
+        style={{
+          flex: 1.2,
+          padding: '24px',
+          background: '#ffffff',
           borderRadius: '16px', // Bo góc lớn hơn cho khối ngoài
           boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)', // Đổ bóng mờ nổi bật khối
-          border: '1px solid #f1f5f9' 
+          border: '1px solid #f1f5f9'
         }}
       >
         {/* Phần Tiêu đề có đường gạch chân phân cách */}
@@ -1090,11 +1193,11 @@ D. Tùy chọn 4`}
             )}
           </div>
         )}
-        
+
         {/* Khung bao quanh danh sách (Có nền xám nhạt và viền rõ ràng) */}
-        <div 
-          style={{ 
-            maxHeight: '600px', 
+        <div
+          style={{
+            maxHeight: '600px',
             overflowY: 'auto',
             background: '#f8fafc', // Nền xám nhạt để làm nổi bật các thẻ câu hỏi màu trắng
             borderRadius: '12px', // Bo góc khu vực chứa danh sách
@@ -1105,13 +1208,13 @@ D. Tùy chọn 4`}
           {questions && questions.length > 0 ? (
             questions.map((q, index) => (
               // Mỗi câu hỏi giờ là một thẻ (card) nhỏ riêng biệt
-              <div 
-                key={q.id || index} 
-                style={{ 
-                  padding: '16px', 
+              <div
+                key={q.id || index}
+                style={{
+                  padding: '16px',
                   marginBottom: '12px', // Khoảng cách giữa các câu hỏi
                   borderRadius: '10px',
-                  border: editingId === q.id ? '2px solid #fbbf24' : '1px solid #e2e8f0', 
+                  border: editingId === q.id ? '2px solid #fbbf24' : '1px solid #e2e8f0',
                   position: 'relative',
                   background: editingId === q.id ? '#fffbeb' : (q.selected ? '#f0fdf4' : '#ffffff'), // Màu nền trắng (hoặc vàng nhạt nếu đang sửa)
                   boxShadow: '0 1px 3px rgba(0,0,0,0.04)', // Đổ bóng nhẹ cho từng câu
@@ -1126,20 +1229,20 @@ D. Tùy chọn 4`}
                 onMouseEnter={(e) => { if (!q.selected && editingId !== q.id) e.currentTarget.style.background = '#f8fafc'; }}
                 onMouseLeave={(e) => { if (!q.selected && editingId !== q.id) e.currentTarget.style.background = '#ffffff'; }}
               >
-                
+
                 {/* CHECKBOX CHỌN NHIỀU */}
                 <div style={{ position: 'absolute', top: '12px', left: '12px' }}>
                   <input
                     type="checkbox"
                     checked={!!q.selected}
-                    onChange={() => {}} // handled by div click
+                    onChange={() => { }} // handled by div click
                     style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#10b981', pointerEvents: 'none' }}
                   />
                 </div>
 
                 {/* NHÓM NÚT SỬA/XÓA */}
                 <div style={{ position: 'absolute', top: '8px', right: '10px', display: 'flex', gap: '5px' }}>
-                  <button 
+                  <button
                     onClick={(e) => {
                       e.stopPropagation();
                       setEditingId(q.id);
@@ -1147,17 +1250,17 @@ D. Tùy chọn 4`}
                       setQText(q.text);
                       setOptTexts(q.options?.map(o => o.text) || ["", "", "", ""]);
                       setCorrectIdx(q.options?.findIndex(o => o.is_correct) ?? 0);
-                    }} 
+                    }}
                     style={{ border: 'none', background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', cursor: 'pointer', fontSize: '14px', padding: '6px 10px', borderRadius: '6px', fontWeight: 'bold' }}
                     title="Sửa câu hỏi"
                   >
                     ✏️ Sửa
                   </button>
-                  <button 
+                  <button
                     onClick={(e) => {
                       e.stopPropagation();
                       deleteQuestion(q.id);
-                    }} 
+                    }}
                     style={{ border: 'none', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', cursor: 'pointer', fontSize: '14px', padding: '6px 10px', borderRadius: '6px', fontWeight: 'bold' }}
                     title="Xóa câu hỏi"
                   >
@@ -1169,16 +1272,16 @@ D. Tùy chọn 4`}
                 <p style={{ marginTop: '30px', marginBottom: '12px', paddingRight: '10px', color: '#334155', lineHeight: '1.5' }}>
                   <strong style={{ color: '#0f172a' }}>Câu {index + 1}:</strong> {q.text}
                 </p>
-                
+
                 {/* ĐÁP ÁN */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '14px' }}>
                   {q.options?.map((opt, i) => (
-                    <div 
-                      key={i} 
-                      style={{ 
-                        padding: '8px 12px', 
+                    <div
+                      key={i}
+                      style={{
+                        padding: '8px 12px',
                         background: opt.is_correct ? '#ecfdf5' : '#f1f5f9', // Bôi nền xanh cho đáp án đúng
-                        color: opt.is_correct ? '#059669' : '#475569', 
+                        color: opt.is_correct ? '#059669' : '#475569',
                         borderRadius: '6px',
                         border: opt.is_correct ? '1px solid #10b981' : '1px solid transparent',
                         fontWeight: opt.is_correct ? 'bold' : 'normal'

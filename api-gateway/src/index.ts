@@ -100,7 +100,7 @@ app.use("/results", verifyJwt, (req: any, res: any, next) => {
     proxyTo(RESULT_URL)(req, res);
 });
 
-app.use("/users", verifyJwt, proxyTo(USER_URL));
+app.use("/user", verifyJwt, proxyTo(USER_URL));
 
 app.get("/", (req, res) => res.json({ status: "Gateway is Online", time: new Date() }));
 

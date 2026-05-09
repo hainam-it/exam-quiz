@@ -28,7 +28,7 @@ export function StudentHistory({ token, exams }) {
           <thead><tr><th>Đề thi</th><th>Ngày làm</th><th>Điểm</th><th>Hành động</th></tr></thead>
           <tbody>
             {history.map(h => (
-              <tr key={h.id}>
+              <tr key={h.full_name}>
                 <td>{exams.find(e => e.id === h.exam_id)?.title || "Đề thi đã xóa"}</td>
                 <td>{new Date(h.created_at).toLocaleString()}</td>
                 <td style={{fontWeight:'bold', color: h.score === null ? '#d97706' : '#16a34a'}}>{h.score !== null ? `${h.score}đ` : "Đang chấm..."}</td>

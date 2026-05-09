@@ -21,8 +21,32 @@ services:
       - result-service
     networks:
       - exam-network
-
   # --- 2. AUTH SERVICE & DB ---
+
+  user-db:
+    image: postgres:15-alpine
+    container_name: exam-quiz-system-main-user-db-1
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1
+      POSTGRES_DB: user_db
+    volumes:
+      - ./sql/user:/docker-entrypoint-initdb.d
+    ports:
+      - "5435:5432"
+    networks:
+      - exam-network
+
+  user-service:
+    build: ./services/user-service # Giả định thư mục code của bạn tên là user-service giống auth-service
+    environment:
+      - PORT=3002
+      - DATABASE_URL=postgresql://postgres:1@user-db:5432/user_db
+      - JWT_SECRET=${JWT_SECRET:-khanh_secret_key_2026}
+    depends_on:
+      - user-db
+    networks:
+      - exam-network
   auth-db:
     image: postgres:15-alpine
     environment:
@@ -143,3 +167,4 @@ volumes:
   exam-db-data:
   submission-db-data:
   result-db-data:
+
